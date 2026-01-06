@@ -1,0 +1,377 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>URWIS - Admin Panel</title>
+    <link rel="stylesheet" href="../css/admin.css">
+</head>
+<body>
+
+    <div class="content" id="content">
+        <div class="welcome">
+            <h1> Welcome //Username</h1>
+            <p> lets get to work!</p>
+            <a href="/logout">Log out</a>
+        </div>
+
+        <div class="nav-panel">
+          <button id="toggle-tickets" class="button-gray"> Tickets panel </button>
+          <button id="toggle-keywords" class="button-gray"> Keywords panel </button> 
+          <button id="toggle-user-manager" class="button-gray"> User manager </button> 
+        </div>
+
+    <div id="tickets-view" class="tickets-view">
+        <div class="search-container">
+            <h2>Search tickets</h2>
+            <input type="text" id="search-user" placeholder="Search by user..." />
+            <input type="text" id="search-keyword" placeholder="Search by keyword..." />
+            <input type="text" id="search-content" placeholder="Search by content..." />
+            <button onclick="searchTickets()" class="button-blue">Search</button>
+        </div>
+
+        <div class="status-filter">
+            <button onclick="filterByStatus('all')" class="button-gray active"> All </button>
+            <button onclick="filterByStatus('open')" class="button-gray"> Open </button>
+            <button onclick="filterByStatus('closed')" class="button-gray"> Closed </button>
+        </div>
+
+        <div class="results-container">
+            <h2>Results</h2>
+            <div id="ticket-results"></div>
+        </div>
+    </div>
+
+    <div id="keywords-editor" class="keywords-editor" style="display:none;">
+        <h2>Keyword Editor</h2>
+        <div class="keywords-search">
+            <input type="text" id="keyword-search" placeholder="Search keyword...">
+            <div id="keyword-search-results" class="keywords-search-result"></div>
+        </div>
+        <textarea id="keyword-json"></textarea>
+        <button onclick="saveKeywordResponses()" class="button-blue">Save</button>
+    </div>
+
+    <div id="user-manager" class="user-manager" style="display:none;">
+        <h2>User Manager</h2>
+
+        <h3>Add User</h3>
+        <input type="text" id="new-email" placeholder="Email">
+        <input type="text" id="new-password" placeholder="Password">
+        <select id="new-role">
+            <option value="user">user</option>
+            <option value="admin">admin</option>
+        </select>
+        <button onclick="addUser()" class="button-blue">Add</button>
+
+        <h3>Current Users</h3>
+        <div id="user-list">
+            <p>Loading users...</p>
+        </div>
+    </div>
+    </div>
+
+    <div class="footer">
+        <p class="p1"> 
+            URWIS - User Requested Wizard with Integrated&nbsp;Server.
+            Author:&nbsp;Jakub&nbsp;Bodzioch (305900) jb305900@student.polsl.pl
+        </p>
+        <p class="p2">  
+            The&nbsp;source code provided on&nbsp;this project is&nbsp;protected by&nbsp;copyright&nbsp;law. 
+            It&nbsp;may be&nbsp;viewed and used solely for educational&nbsp;purposes. <br>
+            Any&nbsp;modification or&nbsp;redistribution without the author's written consent is&nbsp;strictly prohibited.
+        </p>
+    </div>
+
+<script>
+    let adminUsername = "";
+
+    window.addEventListener("DOMContentLoaded", () => {
+        identifyAdmin();
+
+        document.getElementById("toggle-tickets").addEventListener("click", () => {
+            toggleView("tickets");
+        });
+
+        document.getElementById("toggle-keywords").addEventListener("click", () => {
+            toggleView("keywords");
+            loadKeywordResponses();
+        });
+
+        document.getElementById("toggle-user-manager").addEventListener("click", () => {
+            toggleView("user");
+            loadUserList();
+        });
+    });
+
+    function toggleView(view) {
+        const sections = {
+            tickets: document.getElementById("tickets-view"),
+            keywords: document.getElementById("keywords-editor"),
+            user: document.getElementById("user-manager")
+        };
+
+        for (const key in sections) {
+            sections[key].style.display = (key === view) ? "block" : "none";
+        }
+    }
+
+    async function identifyAdmin() {
+        const res = await fetch("/whoami");
+
+        if (!res.ok) {
+            alert("Not logged in as admin.");
+            window.location.href = "/logout";
+            return;
+        }
+
+        const data = await res.json();
+        adminUsername = data.username;
+        document.querySelector(".welcome h1").textContent = "Welcome " + adminUsername;
+        loadAdminTickets();
+    }
+
+    async function loadAdminTickets() {
+        const res = await fetch('/admin/tickets');
+        const container = document.getElementById('ticket-results');
+        container.innerHTML = "";
+
+        if (!res.ok) {
+            container.innerHTML = '<p>Error loading tickets</p>';
+            return;
+        }
+
+        const tickets = await res.json();
+        tickets.forEach(ticket => {
+            const el = document.createElement('div');
+            el.className = 'ticket';
+            el.dataset.status = ticket.status;
+            el.dataset.ticketId = ticket.id;
+
+            const keywordsHtml = (ticket.keywords || []).map(k =>
+                `<span class="keyword" onclick="filterByKeyword('${k}')">${k}</span>`
+            ).join(" ");
+
+            const conversationHtml = (ticket.conversation || []).map(c =>
+                `<p><span class="msg-from">${c.from}:</span> ${c.msg}</p>`
+            ).join("");
+
+            el.innerHTML = `
+                <div class="ticket-created">Created at: ${ticket.created_at || ""}</div>
+                <div class="ticket-header">
+                    <span class="user" onclick="filterByUser('${ticket.username}')">${ticket.username}</span>
+                    <span class="ticket-status">[${ticket.status}]</span>
+                    ${ticket.status === 'open' ? `
+                        <button class="button-gray" onclick="closeAdminTicket('${ticket.id}')">Close</button>
+                        <button class="button-red" onclick="deleteAdminTicket('${ticket.id}')">Delete</button>
+                    ` : `
+                        <button class="button-red" onclick="deleteAdminTicket('${ticket.id}')">Delete</button>
+                    `}
+                </div>
+                <div class="ticket-keywords">${keywordsHtml}</div>
+                <div class="ticket-message">${conversationHtml}</div>
+                ${ticket.status === 'open' ? `
+                    <div class="ticket-response">
+                        <textarea placeholder="Enter your response..."></textarea>
+                        <button class="button-blue" onclick="sendAdminResponse('${ticket.id}')">Send</button>
+                    </div>
+                ` : ''}
+            `;
+            container.appendChild(el);
+        });
+    }
+
+    async function sendAdminResponse(ticketId) {
+        const ticket = document.querySelector(`[data-ticket-id="${ticketId}"]`);
+        const msg = ticket.querySelector('textarea').value.trim();
+        if (!msg) return alert("Response cannot be empty.");
+
+        const res = await fetch(`/reply_ticket?id=${ticketId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: msg
+        });
+
+        res.ok ? (alert('Response sent'), loadAdminTickets()) : alert('Failed to send response');
+    }
+
+    async function closeAdminTicket(ticketId) {
+        const res = await fetch(`/admin/close_ticket?id=${ticketId}`, { method: 'POST' });
+        res.ok ? (alert('Ticket closed'), loadAdminTickets()) : alert('Failed to close ticket');
+    }
+
+    async function deleteAdminTicket(ticketId) {
+        if (!confirm("Are you sure you want to delete this ticket?")) return;
+        const res = await fetch(`/admin/delete_ticket?id=${ticketId}`, { method: "POST" });
+        res.ok ? (alert("Ticket deleted"), loadAdminTickets()) : alert("Failed to delete ticket");
+    }
+
+    function searchTickets() {
+        const user = document.getElementById("search-user").value.toLowerCase();
+        const keyword = document.getElementById("search-keyword").value.toLowerCase();
+        const content = document.getElementById("search-content").value.toLowerCase();
+        const tickets = document.querySelectorAll('.ticket');
+
+        tickets.forEach(ticket => {
+            const username = ticket.querySelector('.user').textContent.toLowerCase();
+            const keywords = Array.from(ticket.querySelectorAll('.keyword')).map(el => el.textContent.toLowerCase());
+            const message = ticket.querySelector('.ticket-message').textContent.toLowerCase();
+
+            const matchUser = !user || username.includes(user);
+            const matchKeyword = !keyword || keywords.some(k => k.includes(keyword));
+            const matchContent = !content || message.includes(content);
+
+            ticket.style.display = (matchUser && matchKeyword && matchContent) ? 'block' : 'none';
+        });
+    }
+
+    function filterByUser(user) {
+        document.getElementById("search-user").value = user;
+        searchTickets();
+    }
+
+    function filterByKeyword(keyword) {
+        document.getElementById("search-keyword").value = keyword;
+        searchTickets();
+    }
+
+    function filterByStatus(status) {
+        document.querySelectorAll('.status-filter button').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+
+        document.querySelectorAll('.ticket').forEach(ticket => {
+            const s = ticket.getAttribute("data-status");
+            ticket.style.display = (status === 'all' || s === status) ? 'block' : 'none';
+        });
+    }
+
+    async function loadKeywordResponses() {
+        const res = await fetch('/admin/keywords');
+        if (!res.ok) return alert('Failed to load keywords');
+        const data = await res.text();
+        document.getElementById('keyword-json').value = data;
+    }
+
+    async function saveKeywordResponses() {
+        const jsonText = document.getElementById('keyword-json').value;
+        try {
+            JSON.parse(jsonText);
+        } catch {
+            alert('Invalid JSON format');
+            return;
+        }
+
+        const res = await fetch('/admin/keywords', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: jsonText
+        });
+
+        alert(res.ok ? 'Keywords saved' : 'Failed to save');
+    }
+
+document.getElementById("keyword-search").addEventListener("input", () => {
+    const input = document.getElementById("keyword-search").value.toLowerCase();
+    const raw = document.getElementById("keyword-json").value;
+    const outputEl = document.getElementById("keyword-search-results");
+
+    if (input.trim() === "") {
+        outputEl.textContent = "";
+        return;
+    }
+
+    let parsed;
+    try {
+        parsed = JSON.parse(raw);
+    } catch {
+        outputEl.textContent = "⚠️ Invalid JSON format";
+        return;
+    }
+
+    if (!Array.isArray(parsed)) {
+        outputEl.textContent = "⚠️ Expected JSON array";
+        return;
+    }
+
+    const matches = parsed.filter(k => k.toLowerCase().includes(input));
+    const output = matches.map(k => `• ${k}`).join("\n") || "No match found";
+
+    outputEl.textContent = output;
+});
+
+    async function loadUserList() {
+        const res = await fetch("/admin/users");
+        if (!res.ok) {
+            document.getElementById("user-list").innerHTML = "<p>Failed to load user list</p>";
+            return;
+        }
+
+        const users = await res.json();
+        const listContainer = document.getElementById("user-list");
+        listContainer.innerHTML = "";
+
+        users.forEach(user => {
+            const row = document.createElement("div");
+            row.className = "user-row";
+            row.innerHTML = `
+                <span><b>${user.email}</b> (${user.role})</span>
+                <button class="button-red" onclick="deleteUser('${user.email}')">Delete</button>
+            `;
+            listContainer.appendChild(row);
+        });
+    }
+
+    async function addUser() {
+        const email = document.getElementById("new-email").value.trim();
+        const password = document.getElementById("new-password").value.trim();
+        const role = document.getElementById("new-role").value;
+
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const passwordRegex = /^(?=.*[A-Z])(?=.*\d)(?=.*[\W_]).{8,}$/;
+
+        if (!email || !password) return alert("Fill in all fields");
+
+        if (!emailRegex.test(email)) {
+            return alert("Invalid email format");
+        }
+
+        if (!passwordRegex.test(password)) {
+            return alert("Password must be at least 8 characters long, contain one uppercase letter, one special character, and one number.");
+        }
+
+
+        const adminPassword = prompt("Enter your admin password:");
+        if (!adminPassword) return alert("Cancelled");
+
+        const res = await fetch("/admin/add_user", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, password, role, admin_password: adminPassword })
+        });
+
+        const txt = await res.text();
+        alert(res.ok ? "User added" : "Failed: " + txt);
+        if (res.ok) loadUserList();
+    }
+
+    async function deleteUser(email) {
+        const confirmDelete = confirm(`Are you sure you want to delete user ${email}?`);
+        if (!confirmDelete) return;
+
+        const adminPassword = prompt("Enter your admin password:");
+        if (!adminPassword) return alert("Cancelled");
+
+        const res = await fetch("/admin/delete_user", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, admin_password: adminPassword })
+        });
+
+        const txt = await res.text();
+        alert(res.ok ? "User deleted" : "Failed: " + txt);
+        if (res.ok) loadUserList();
+    }
+</script>
+
+</body>
+</html>

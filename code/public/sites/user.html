@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="../css/user.css">
+    <title>URWIS - user client</title>
+</head>
+<body>
+
+<div class="content">
+
+    <div class="welcome">
+        <h1> Welome //Username</h1>
+        <p> How can we help you tooday?</p>
+        <a href="/logout">Log out</a>
+    </div>
+
+    <div class="ticket-creation-container">
+        <h2> Create new ticket </h2>
+        <form>
+            <textarea placeholder="Describe your problem..."></textarea><br>
+            <button class="button-blue"> Send Ticket to IT department </button>
+        </form>
+    </div>
+
+        <div class="status-filter">
+            <button onclick="filterByStatus('all')" class="button-gray active">All</button>
+            <button onclick="filterByStatus('open')" class="button-gray">Open</button>
+            <button onclick="filterByStatus('closed')" class="button-gray">Closed</button>
+        </div>
+
+        <div class="results-container">
+            <h2>Results</h2>
+            <div id="ticket-results">
+
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<div class="footer">
+    <p class="p1"> 
+        URWIS - User Requested Wizard with Integrated&nbsp;Server.
+        Author:&nbsp;Jakub&nbsp;Bodzioch (305900) jb305900@student.polsl.pl
+    </p>
+    <p class="p2">  
+        The&nbsp;source code provided on&nbsp;this project is&nbsp;protected by&nbsp;copyright&nbsp;law. 
+        It&nbsp;may be&nbsp;viewed and used solely for educational&nbsp;purposes. <br>
+        Any&nbsp;modification or&nbsp;redistribution without the author's written consent is&nbsp;strictly prohibited.
+    </p>
+</div>
+    
+<script>
+    let userEmail = "";
+    let username = "";
+
+    async function identifyUser() {
+        const res = await fetch("/whoami");
+        if (!res.ok) {
+            alert("You are not logged in.");
+            window.location.href = "/logout";
+            return;
+        }
+
+        const data = await res.json();
+        userEmail = data.email;
+        username = data.username;
+
+        document.querySelector(".welcome h1").textContent = "Welcome " + username;
+        loadTickets();
+    }
+
+async function loadTickets() {
+    const res = await fetch(`/my_tickets?user=${username}`);
+    if (!res.ok) {
+        document.getElementById("ticket-results").innerHTML = "<p>No tickets found.</p>";
+        return;
+    }
+
+    const tickets = await res.json();
+    const container = document.getElementById("ticket-results");
+    container.innerHTML = "";
+
+    tickets.forEach(ticket => {
+        const createdAtHtml = ticket.created_at ? `Created at: ${ticket.created_at}` : "";
+        const keywordsHtml = (ticket.keywords || []).map(k => `<span class="keyword">${k}</span>`).join(" ");
+
+        const el = document.createElement("div");
+        el.className = "ticket";
+        el.dataset.status = ticket.status;
+        el.dataset.ticketId = ticket.id;
+
+        const conversationHtml = (ticket.conversation || []).map(c =>
+            `<p><span class="msg-from">${c.from}:</span> ${c.msg}</p>`
+        ).join("");
+
+        el.innerHTML = `
+        <div class="ticket-header">
+            <div class="ticket-created">${createdAtHtml}</div>
+            <span class="ticket-status">[${ticket.status}]</span>
+        </div>
+            <div class="ticket-keywords">${keywordsHtml}</div>
+            <div class="ticket-message">${conversationHtml}</div>
+            ${ticket.status === "open" ? `
+            <div class="ticket-response">
+                <textarea placeholder="Enter your response..."></textarea>
+                <button onclick="sendResponse('${ticket.id}')" class="button-blue">Send</button>
+            </div>` : ""}
+        `;
+
+
+        container.appendChild(el);
+    });
+}
+
+
+    async function sendResponse(ticketId) {
+        const ticket = document.querySelector(`[data-ticket-id="${ticketId}"]`);
+        const msg = ticket.querySelector("textarea").value.trim();
+        if (!msg) return alert("Response cannot be empty.");
+
+        const res = await fetch(`/reply_ticket?user=${username}&id=${ticketId}`, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain" },
+            body: msg
+        });
+
+        if (res.ok) {
+            alert("Response sent.");
+            loadTickets();
+        } else {
+            alert("Failed to send response.");
+        }
+    }
+
+    async function closeTicket(ticketId) {
+        const res = await fetch(`/close_ticket?user=${username}&id=${ticketId}`, {
+            method: "POST"
+        });
+
+        if (res.ok) {
+            alert("Ticket closed.");
+            loadTickets();
+        } else {
+            alert("Failed to close ticket.");
+        }
+    }
+
+    function filterByStatus(status) {
+        document.querySelectorAll('.status-filter button').forEach(btn => btn.classList.remove('active'));
+        event.target.classList.add('active');
+
+        document.querySelectorAll('.ticket').forEach(ticket => {
+            const tStatus = ticket.getAttribute("data-status");
+            ticket.style.display = (status === 'all' || tStatus === status) ? 'block' : 'none';
+        });
+    }
+
+    document.querySelector("form").addEventListener("submit", async function (e) {
+        e.preventDefault();
+        const textarea = this.querySelector("textarea");
+        const msg = textarea.value.trim();
+        if (!msg) return alert("Please enter a message.");
+
+        const res = await fetch("/submit_ticket", {
+            method: "POST",
+            headers: {
+                "Content-Type": "text/plain",
+            },
+            body: msg
+        });
+
+        if (res.ok) {
+            alert("Ticket sent!");
+            textarea.value = "";
+            loadTickets();
+        } else {
+            alert("Failed to submit ticket.");
+        }
+    });
+
+    window.addEventListener("DOMContentLoaded", () => {
+        identifyUser();
+    });
+</script>
+
+</body>
+</html>

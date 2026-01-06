@@ -1,0 +1,22 @@
+[
+    {
+        "email": "admin@urwis.com",
+        "password": "FBYaAB1EQEQ=",
+        "role": "admin"
+    },
+    {
+        "email": "jakub@urwis.com",
+        "password": "JRNTTQRFABMjMQ==",
+        "role": "admin"
+    },
+    {
+        "email": "testuser1@urwis.com",
+        "password": "JRNTTQRFABMjMQ==",
+        "role": "user"
+    },
+    {
+        "email": "testuser2@urwis.com",
+        "password": "JRNTTQRFABMjMQ==",
+        "role": "user"
+    }
+]
